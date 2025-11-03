@@ -52,24 +52,28 @@ pipeline {
     steps {
         sh '''
             echo "Running health check..."
-            
-            # Test from inside the app container
             for i in {1..30}; do
                 echo "Attempt $i/30: Checking health endpoint..."
-                if docker exec ${APP_CONTAINER} curl -sf http://localhost:3000/health 2>/dev/null; then
-                    echo "✓ App is healthy"
+                if docker exec ${APP_CONTAINER} node -e "
+                    const http = require('http');
+                    http.get('http://localhost:3000/health', (res) => {
+                        process.exit(res.statusCode === 200 ? 0 : 1);
+                    }).on('error', () => process.exit(1));
+                    setTimeout(() => process.exit(1), 5000);
+                " 2>/dev/null; then
+                    echo "✓ App is healthy!"
                     exit 0
                 fi
-                echo "App not ready, waiting 2 seconds..."
                 sleep 2
             done
             
-            echo "✗ App failed health check after 30 attempts"
+            echo "✗ App failed health check"
             docker logs ${APP_CONTAINER}
             exit 1
         '''
     }
 }
+
 
         
         stage('Run Pytest') {
@@ -135,4 +139,5 @@ pipeline {
         }
     }
 }
+
 
