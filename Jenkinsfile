@@ -1,98 +1,93 @@
 pipeline {
-    agent any
-
+    agent {
+        docker { image 'node:18-alpine' }
+    }
+    
     environment {
         DOCKER_IMAGE = "calculator-app:${BUILD_NUMBER}"
         DOCKER_IMAGE_LATEST = "calculator-app:latest"
         APP_CONTAINER = "calculator-app-${BUILD_NUMBER}"
         TEST_RESULTS = "test-results.xml"
     }
-
+    
     stages {
-        stage('Checkout') {
+        stage('Install Dependencies') {
             steps {
-                checkout scm
-                echo "Repository checked out successfully"
+                sh 'node --version'
+                sh 'npm install'
             }
         }
-
+        
         stage('Build Docker Image') {
             steps {
-                script {
-                    echo "Building Docker image: ${DOCKER_IMAGE}"
-                    sh 'docker build -t ${DOCKER_IMAGE} -t ${DOCKER_IMAGE_LATEST} .'
-                    sh 'docker images | grep calculator-app'
-                }
+                sh 'docker build -t ${DOCKER_IMAGE} -t ${DOCKER_IMAGE_LATEST} .'
+                sh 'docker images | grep calculator-app'
             }
         }
-
+        
         stage('Start Application') {
             steps {
-                script {
-                    echo "Starting calculator application container"
-                    sh '''
-                        docker run -d \
-                            --name ${APP_CONTAINER} \
-                            -p 3000:3000 \
-                            ${DOCKER_IMAGE}
-                        
-                        sleep 3
-                        docker ps | grep ${APP_CONTAINER}
-                    '''
-                }
+                sh '''
+                    docker run -d \
+                        --name ${APP_CONTAINER} \
+                        -p 3000:3000 \
+                        ${DOCKER_IMAGE}
+                    
+                    sleep 5
+                    docker ps | grep ${APP_CONTAINER}
+                '''
             }
         }
-
+        
+        stage('Health Check') {
+            steps {
+                sh '''
+                    for i in {1..30}; do
+                        if curl -f http://localhost:3000/health; then
+                            echo "App is healthy"
+                            exit 0
+                        fi
+                        echo "Attempt $i: App not ready, waiting..."
+                        sleep 2
+                    done
+                    echo "App failed health check"
+                    exit 1
+                '''
+            }
+        }
+        
         stage('Run Pytest') {
             steps {
-                script {
-                    echo "Running pytest tests"
-                    sh '''
-                        docker run --rm \
-                            --network host \
-                            -e APP_URL=http://localhost:3000 \
-                            -v ${WORKSPACE}:/workspace \
-                            ${DOCKER_IMAGE} \
-                            python3 -m pytest /workspace/tests/test_calculator.py \
-                            --junitxml=/workspace/${TEST_RESULTS} \
-                            --tb=short \
-                            -v
-                    '''
-                }
+                sh '''
+                    pip install pytest pytest-cov requests
+                    python3 -m pytest tests/test_calculator.py \
+                        --junitxml=${TEST_RESULTS} \
+                        --tb=short \
+                        -v
+                '''
             }
         }
-
+        
         stage('Generate Coverage Report') {
             steps {
-                script {
-                    echo "Generating coverage report"
-                    sh '''
-                        docker run --rm \
-                            --network host \
-                            -e APP_URL=http://localhost:3000 \
-                            -v ${WORKSPACE}:/workspace \
-                            ${DOCKER_IMAGE} \
-                            python3 -m pytest /workspace/tests/test_calculator.py \
-                            --cov=. \
-                            --cov-report=html:/workspace/coverage-report \
-                            --tb=short || true
-                    '''
-                }
+                sh '''
+                    python3 -m pytest tests/test_calculator.py \
+                        --cov=. \
+                        --cov-report=html:coverage-report \
+                        --tb=short || true
+                '''
             }
         }
     }
-
+    
     post {
         always {
-            script {
-                echo "Cleaning up containers"
-                sh 'docker stop ${APP_CONTAINER} || true'
-                sh 'docker rm ${APP_CONTAINER} || true'
-            }
+            sh 'docker stop ${APP_CONTAINER} || true'
+            sh 'docker rm ${APP_CONTAINER} || true'
         }
-
+        
         success {
-            echo "Pipeline executed successfully"
+            junit testResults: '${TEST_RESULTS}', allowEmptyResults: false
             publishHTML([
                 allowMissing: false,
                 alwaysLinkToLastBuild: true,
@@ -102,13 +97,10 @@ pipeline {
                 reportName: 'Coverage Report'
             ])
         }
-
+        
         failure {
-            echo "Pipeline failed"
+            junit testResults: '${TEST_RESULTS}', allowEmptyResults: true
             archiveArtifacts artifacts: '${TEST_RESULTS}', allowEmptyArchive: true
         }
     }
 }
-
-// Publish test results to Jenkins
-junit testResults: '${TEST_RESULTS}', allowEmptyResults: false
