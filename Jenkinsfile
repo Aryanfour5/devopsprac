@@ -49,42 +49,40 @@ pipeline {
         }
         
         stage('Health Check') {
-    steps {
-        sh '''
-            echo "Running health check..."
-            for i in {1..30}; do
-                echo "Attempt $i/30: Checking health endpoint..."
-                if docker exec ${APP_CONTAINER} node -e "
-                    const http = require('http');
-                    http.get('http://localhost:3000/health', (res) => {
-                        process.exit(res.statusCode === 200 ? 0 : 1);
-                    }).on('error', () => process.exit(1));
-                    setTimeout(() => process.exit(1), 5000);
-                " 2>/dev/null; then
-                    echo "✓ App is healthy!"
-                    exit 0
-                fi
-                sleep 2
-            done
-            
-            echo "✗ App failed health check"
-            docker logs ${APP_CONTAINER}
-            exit 1
-        '''
-    }
-}
-
-
+            steps {
+                sh '''
+                    echo "Running health check..."
+                    for i in {1..30}; do
+                        echo "Attempt $i/30: Checking health endpoint..."
+                        if docker exec ${APP_CONTAINER} node -e "
+                            const http = require('http');
+                            http.get('http://localhost:3000/health', (res) => {
+                                process.exit(res.statusCode === 200 ? 0 : 1);
+                            }).on('error', () => process.exit(1));
+                            setTimeout(() => process.exit(1), 5000);
+                        " 2>/dev/null; then
+                            echo "✓ App is healthy!"
+                            exit 0
+                        fi
+                        sleep 2
+                    done
+                    
+                    echo "✗ App failed health check"
+                    docker logs ${APP_CONTAINER}
+                    exit 1
+                '''
+            }
+        }
         
         stage('Run Pytest') {
             steps {
                 sh '''
-                    echo "Installing test dependencies..."
-                    pip3 install --break-system-packages pytest pytest-cov requests
-                    
-                    echo "Running tests..."
-                    python3 -m pytest tests/test_calculator.py \
-                        --junitxml=${TEST_RESULTS} \
+                    echo "Running pytest inside Docker container..."
+                    docker run --rm \
+                        -v ${WORKSPACE}:/workspace \
+                        ${DOCKER_IMAGE} \
+                        python3 -m pytest /workspace/tests/test_calculator.py \
+                        --junitxml=/workspace/${TEST_RESULTS} \
                         --tb=short \
                         -v
                 '''
@@ -95,9 +93,12 @@ pipeline {
             steps {
                 sh '''
                     echo "Generating coverage report..."
-                    python3 -m pytest tests/test_calculator.py \
+                    docker run --rm \
+                        -v ${WORKSPACE}:/workspace \
+                        ${DOCKER_IMAGE} \
+                        python3 -m pytest /workspace/tests/test_calculator.py \
                         --cov=. \
-                        --cov-report=html:coverage-report \
+                        --cov-report=html:/workspace/coverage-report \
                         --tb=short || true
                 '''
             }
@@ -139,5 +140,3 @@ pipeline {
         }
     }
 }
-
-
