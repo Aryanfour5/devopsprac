@@ -1,0 +1,16 @@
+{
+  "name": "calculator-app",
+  "version": "1.0.0",
+  "description": "Simple Node.js calculator API",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "test": "echo 'Tests run by pytest'"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}
