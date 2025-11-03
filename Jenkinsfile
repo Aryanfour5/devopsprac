@@ -1,7 +1,5 @@
 pipeline {
-    agent {
-        docker { image 'node:18-alpine' }
-    }
+    agent any
     
     environment {
         DOCKER_IMAGE = "calculator-app:${BUILD_NUMBER}"
@@ -104,3 +102,4 @@ pipeline {
         }
     }
 }
+
