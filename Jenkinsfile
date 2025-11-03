@@ -26,13 +26,24 @@ pipeline {
         stage('Start Application') {
             steps {
                 sh '''
+                    echo "Starting calculator app container..."
                     docker run -d \
                         --name ${APP_CONTAINER} \
                         -p 3000:3000 \
                         ${DOCKER_IMAGE}
                     
+                    echo "Waiting 5 seconds for startup..."
                     sleep 5
-                    docker ps | grep ${APP_CONTAINER}
+                    
+                    echo "Checking if container is running..."
+                    if docker ps | grep ${APP_CONTAINER}; then
+                        echo "✓ Container is running"
+                    else
+                        echo "✗ Container failed to start!"
+                        echo "Container logs:"
+                        docker logs ${APP_CONTAINER}
+                        exit 1
+                    fi
                 '''
             }
         }
@@ -40,15 +51,24 @@ pipeline {
         stage('Health Check') {
             steps {
                 sh '''
+                    echo "Running health check..."
+                    
                     for i in {1..30}; do
-                        if curl -f http://localhost:3000/health; then
-                            echo "App is healthy"
+                        echo "Attempt $i/30: Checking http://localhost:3000/health"
+                        if curl -sf http://localhost:3000/health 2>/dev/null; then
+                            echo "✓ App is healthy"
                             exit 0
                         fi
-                        echo "Attempt $i: App not ready, waiting..."
+                        echo "App not ready, waiting 2 seconds..."
                         sleep 2
                     done
-                    echo "App failed health check"
+                    
+                    echo "✗ App failed health check after 30 attempts"
+                    echo "Container logs:"
+                    docker logs ${APP_CONTAINER}
+                    echo ""
+                    echo "Running processes in container:"
+                    docker exec ${APP_CONTAINER} ps aux 2>/dev/null || echo "Could not get processes"
                     exit 1
                 '''
             }
@@ -57,7 +77,10 @@ pipeline {
         stage('Run Pytest') {
             steps {
                 sh '''
-                    pip install pytest pytest-cov requests
+                    echo "Installing test dependencies..."
+                    pip3 install --break-system-packages pytest pytest-cov requests
+                    
+                    echo "Running tests..."
                     python3 -m pytest tests/test_calculator.py \
                         --junitxml=${TEST_RESULTS} \
                         --tb=short \
@@ -69,6 +92,7 @@ pipeline {
         stage('Generate Coverage Report') {
             steps {
                 sh '''
+                    echo "Generating coverage report..."
                     python3 -m pytest tests/test_calculator.py \
                         --cov=. \
                         --cov-report=html:coverage-report \
@@ -80,8 +104,11 @@ pipeline {
     
     post {
         always {
-            sh 'docker stop ${APP_CONTAINER} || true'
-            sh 'docker rm ${APP_CONTAINER} || true'
+            sh '''
+                echo "Cleaning up..."
+                docker stop ${APP_CONTAINER} 2>/dev/null || echo "Container already stopped"
+                docker rm ${APP_CONTAINER} 2>/dev/null || echo "Container already removed"
+            '''
         }
         
         success {
@@ -94,12 +121,19 @@ pipeline {
                 reportFiles: 'index.html',
                 reportName: 'Coverage Report'
             ])
+            
+            echo "✓ Build successful!"
         }
         
         failure {
             junit testResults: '${TEST_RESULTS}', allowEmptyResults: true
             archiveArtifacts artifacts: '${TEST_RESULTS}', allowEmptyArchive: true
+            
+            sh '''
+                echo "=== Build Failed ==="
+                echo "Last container logs:"
+                docker logs ${APP_CONTAINER} 2>/dev/null || echo "No logs available"
+            '''
         }
     }
 }
-
