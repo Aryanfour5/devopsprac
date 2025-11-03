@@ -49,30 +49,28 @@ pipeline {
         }
         
         stage('Health Check') {
-            steps {
-                sh '''
-                    echo "Running health check..."
-                    
-                    for i in {1..30}; do
-                        echo "Attempt $i/30: Checking http://localhost:3000/health"
-                        if curl -sf http://localhost:3000/health 2>/dev/null; then
-                            echo "✓ App is healthy"
-                            exit 0
-                        fi
-                        echo "App not ready, waiting 2 seconds..."
-                        sleep 2
-                    done
-                    
-                    echo "✗ App failed health check after 30 attempts"
-                    echo "Container logs:"
-                    docker logs ${APP_CONTAINER}
-                    echo ""
-                    echo "Running processes in container:"
-                    docker exec ${APP_CONTAINER} ps aux 2>/dev/null || echo "Could not get processes"
-                    exit 1
-                '''
-            }
-        }
+    steps {
+        sh '''
+            echo "Running health check..."
+            
+            # Test from inside the app container
+            for i in {1..30}; do
+                echo "Attempt $i/30: Checking health endpoint..."
+                if docker exec ${APP_CONTAINER} curl -sf http://localhost:3000/health 2>/dev/null; then
+                    echo "✓ App is healthy"
+                    exit 0
+                fi
+                echo "App not ready, waiting 2 seconds..."
+                sleep 2
+            done
+            
+            echo "✗ App failed health check after 30 attempts"
+            docker logs ${APP_CONTAINER}
+            exit 1
+        '''
+    }
+}
+
         
         stage('Run Pytest') {
             steps {
@@ -137,3 +135,4 @@ pipeline {
         }
     }
 }
+
