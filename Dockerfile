@@ -26,5 +26,5 @@ RUN pip3 install --no-cache-dir --break-system-packages -r requirements-test.txt
 
 EXPOSE 3000
 
-# Fixed: Point to correct app location
-CMD ["node", "src/calculator.js"]
+CMD ["node", "app.js"]
+
