@@ -22,8 +22,9 @@ COPY . .
 COPY requirements-test.txt .
 
 # Install Python test dependencies
-RUN pip3 install --no-cache-dir -r requirements-test.txt
+RUN pip3 install --no-cache-dir --break-system-packages -r requirements-test.txt
 
 EXPOSE 3000
 
 CMD ["node", "app.js"]
+
