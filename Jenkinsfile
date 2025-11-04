@@ -2,8 +2,6 @@ pipeline {
     agent any
 
     environment {
-        DOCKER_IMAGE = 'node:18-alpine'
-        PY_IMAGE = 'python:3.11-slim'
         APP_CONTAINER = "calculator-app-${BUILD_NUMBER}"
     }
 
@@ -18,9 +16,7 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 echo "🔨 Building Docker image..."
-                sh '''
-                    docker build -t calculator-app:${BUILD_NUMBER} .
-                '''
+                sh 'docker build -t calculator-app:${BUILD_NUMBER} .'
             }
         }
 
@@ -32,7 +28,7 @@ pipeline {
                       --name ${APP_CONTAINER} \
                       -p 3000:3000 \
                       calculator-app:${BUILD_NUMBER}
-                    sleep 3
+                    sleep 10
                 '''
             }
         }
@@ -41,27 +37,30 @@ pipeline {
             steps {
                 echo "✅ Health checking..."
                 sh '''
-                    for i in {1..10}; do
-                        if curl -f http://localhost:3000/health; then
-                            echo "App is healthy!"
+                    for i in {1..30}; do
+                        echo "Attempt $i/30..."
+                        if docker logs ${APP_CONTAINER} | grep -q "listening on port 3000"; then
+                            echo "✓ App started!"
                             exit 0
                         fi
                         sleep 1
                     done
+                    echo "✗ App failed to start"
+                    docker logs ${APP_CONTAINER}
                     exit 1
                 '''
             }
         }
 
-        stage('Run Pytest') {
+        stage('Run Tests') {
             steps {
                 echo "🧪 Running pytest..."
                 sh '''
                     docker run --rm \
-                      -e APP_URL=http://host.docker.internal:3000 \
+                      -e APP_URL=http://172.17.0.1:3000 \
                       -v ${WORKSPACE}:/workspace \
                       -w /workspace \
-                      ${PY_IMAGE} \
+                      python:3.11-slim \
                       /bin/sh -c "pip install -q pytest requests && python3 -m pytest tests/ -v --tb=short --junitxml=test-results.xml"
                 '''
             }
@@ -75,13 +74,14 @@ pipeline {
                 docker stop ${APP_CONTAINER} 2>/dev/null || true
                 docker rm ${APP_CONTAINER} 2>/dev/null || true
             '''
+            junit 'test-results.xml'
         }
         success {
-            echo "🎉 Build successful!"
-            junit 'test-results.xml'
+            echo "🎉 All tests passed!"
         }
         failure {
             echo "❌ Build failed!"
+            sh 'docker logs ${APP_CONTAINER} || true'
         }
     }
 }
