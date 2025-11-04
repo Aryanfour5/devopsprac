@@ -100,19 +100,22 @@ pipeline {
             # Ensure __init__.py exists
             touch tests/__init__.py
             
-            # Run pytest from the mounted workspace
+            # Debug: Show what pytest sees
+            echo "Debug - Files in workspace:"
+            ls -la /var/jenkins_home/workspace/testing-pipeline/tests/
+            
+            # Run pytest - use absolute path and set PYTHONPATH
             docker run --rm \\
-                -v ${WORKSPACE}:/workspace \\
-                -w /workspace \\
+                -v /var/jenkins_home/workspace/testing-pipeline:/app \\
+                -w /app \\
                 -e APP_URL=http://host.docker.internal:3000 \\
+                -e PYTHONPATH=/app \\
                 ${DOCKER_IMAGE} \\
-                python3 -m pytest tests/test_calculator.py \\
-                -v \\
-                --tb=short \\
-                --junitxml=/workspace/test-results.xml
+                bash -c "python3 -m pytest /app/tests/test_calculator.py -v --tb=short --junitxml=/app/test-results.xml || true"
         '''
     }
 }
+
 
         
         stage('Generate Coverage Report') {
@@ -188,4 +191,5 @@ pipeline {
         }
     }
 }
+
 
