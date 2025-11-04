@@ -4,7 +4,7 @@ const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 
-// Calculator endpoints
+
 app.post("/api/add", (req, res) => {
   const { a, b } = req.body;
   if (typeof a !== "number" || typeof b !== "number") {
@@ -49,3 +49,4 @@ app.listen(PORT, () => {
 });
 
 module.exports = app;
+
