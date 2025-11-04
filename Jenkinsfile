@@ -1,6 +1,10 @@
 pipeline {
     agent any
-
+    triggers {
+        githubPush()  // For GitHub webhook
+        // OR for generic webhook:
+        // GenericTrigger()
+    }
     environment {
         APP_CONTAINER = "calculator-app-${BUILD_NUMBER}"
     }
@@ -87,4 +91,5 @@ pipeline {
         }
     }
 }
+
 
