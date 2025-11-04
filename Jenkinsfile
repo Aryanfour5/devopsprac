@@ -92,21 +92,22 @@ pipeline {
             }
         }
         
-        stage('Run Pytest') {
-    steps {
-        sh '''
-            echo "Installing test requirements..."
-            pip3 install -q pytest requests pytest-cov
-            
-            echo "Running pytest against running app on localhost:3000..."
-            python3 -m pytest tests/test_calculator.py \\
-                -v \\
-                --tb=short \\
-                --junitxml=test-results.xml \\
-                -e APP_URL=http://localhost:3000
-        '''
-    }
-}
+                stage('Run Pytest') {
+            steps {
+                sh '''
+                    echo "Running pytest from Docker..."
+                    docker run --rm \\
+                        -v ${WORKSPACE}:/app \\
+                        -w /app \\
+                        calculator-app:${BUILD_NUMBER} \\
+                        python3 -m pytest tests/test_calculator.py \\
+                        -v \\
+                        --tb=short \\
+                        --junitxml=/app/test-results.xml
+                '''
+            }
+        }
+
 
 
 
@@ -184,6 +185,7 @@ pipeline {
         }
     }
 }
+
 
 
 
