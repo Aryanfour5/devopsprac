@@ -47,26 +47,17 @@ pipeline {
             }
         }
 
-stage('Run Tests') {
-    steps {
-        sh '''
-            # Run tests using docker run with proper volume mounting
-            docker run --rm --network host \
-                -v "$(pwd)":/workspace \
-                -w /workspace \
-                python:3.11-slim /bin/sh -c \
-                "pip install -q pytest requests && python3 -m pytest tests/ -v --tb=short --junitxml=test-results.xml"
-        '''
-    }
-}
-    }
-    steps {
-        sh '''
-            pip install -q pytest requests
-            python3 -m pytest tests/ -v --tb=short --junitxml=test-results.xml
-        '''
-    }
-}
+        stage('Run Tests') {
+            steps {
+                sh '''
+                    docker run --rm --network host \
+                        -v "$(pwd)":/workspace \
+                        -w /workspace \
+                        python:3.11-slim /bin/sh -c \
+                        "pip install -q pytest requests && python3 -m pytest tests/ -v --tb=short --junitxml=test-results.xml"
+                '''
+            }
+        }
     }
 
     post {
@@ -83,9 +74,3 @@ stage('Run Tests') {
         }
     }
 }
-
-
-
-
-
-
