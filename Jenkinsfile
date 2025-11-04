@@ -9,17 +9,35 @@ pipeline {
     }
     
     stages {
+        stage('Checkout') {
+            steps {
+                checkout(scm)
+                sh '''
+                    echo "Repository contents:"
+                    ls -la
+                    echo "\nTests directory:"
+                    ls -la tests/
+                '''
+            }
+        }
+        
         stage('Install Dependencies') {
             steps {
-                sh 'node --version'
-                sh 'npm install'
+                sh '''
+                    echo "Installing dependencies..."
+                    node --version
+                    npm install
+                '''
             }
         }
         
         stage('Build Docker Image') {
             steps {
-                sh 'docker build -t ${DOCKER_IMAGE} -t ${DOCKER_IMAGE_LATEST} .'
-                sh 'docker images | grep calculator-app'
+                sh '''
+                    echo "Building Docker image: ${DOCKER_IMAGE}"
+                    docker build -t ${DOCKER_IMAGE} -t ${DOCKER_IMAGE_LATEST} .
+                    docker images | grep calculator-app
+                '''
             }
         }
         
@@ -41,7 +59,7 @@ pipeline {
                     else
                         echo "✗ Container failed to start!"
                         echo "Container logs:"
-                        docker logs ${APP_CONTAINER}
+                        docker logs ${APP_CONTAINER} || true
                         exit 1
                     fi
                 '''
@@ -68,7 +86,7 @@ pipeline {
                     done
                     
                     echo "✗ App failed health check"
-                    docker logs ${APP_CONTAINER}
+                    docker logs ${APP_CONTAINER} || true
                     exit 1
                 '''
             }
@@ -78,6 +96,21 @@ pipeline {
             steps {
                 sh '''
                     echo "Running pytest inside Docker container..."
+                    echo "Workspace: ${WORKSPACE}"
+                    
+                    # Debug: Verify test file exists
+                    echo "Checking test files in workspace:"
+                    ls -la ${WORKSPACE}/tests/ || echo "Tests directory not found!"
+                    
+                    # Verify file exists before running
+                    if [ ! -f "${WORKSPACE}/tests/test_calculator.py" ]; then
+                        echo "ERROR: test_calculator.py not found at ${WORKSPACE}/tests/"
+                        echo "Available files in ${WORKSPACE}:"
+                        find ${WORKSPACE} -name "*.py" -type f
+                        exit 1
+                    fi
+                    
+                    # Run pytest with proper volume mount
                     docker run --rm \
                         -v ${WORKSPACE}:/workspace \
                         ${DOCKER_IMAGE} \
@@ -90,6 +123,9 @@ pipeline {
         }
         
         stage('Generate Coverage Report') {
+            when {
+                expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
+            }
             steps {
                 sh '''
                     echo "Generating coverage report..."
@@ -108,34 +144,53 @@ pipeline {
     post {
         always {
             sh '''
-                echo "Cleaning up..."
+                echo "Cleaning up containers..."
                 docker stop ${APP_CONTAINER} 2>/dev/null || echo "Container already stopped"
                 docker rm ${APP_CONTAINER} 2>/dev/null || echo "Container already removed"
             '''
         }
         
         success {
-            junit testResults: '${TEST_RESULTS}', allowEmptyResults: false
-            publishHTML([
-                allowMissing: false,
-                alwaysLinkToLastBuild: true,
-                keepAll: true,
-                reportDir: 'coverage-report',
-                reportFiles: 'index.html',
-                reportName: 'Coverage Report'
-            ])
+            script {
+                if (fileExists('${TEST_RESULTS}')) {
+                    junit testResults: '${TEST_RESULTS}', allowEmptyResults: false
+                }
+            }
             
-            echo "✓ Build successful!"
+            script {
+                if (fileExists('coverage-report/index.html')) {
+                    publishHTML([
+                        allowMissing: false,
+                        alwaysLinkToLastBuild: true,
+                        keepAll: true,
+                        reportDir: 'coverage-report',
+                        reportFiles: 'index.html',
+                        reportName: 'Coverage Report'
+                    ])
+                }
+            }
+            
+            echo "✓ Build and tests successful!"
         }
         
         failure {
-            junit testResults: '${TEST_RESULTS}', allowEmptyResults: true
-            archiveArtifacts artifacts: '${TEST_RESULTS}', allowEmptyArchive: true
+            script {
+                if (fileExists('${TEST_RESULTS}')) {
+                    junit testResults: '${TEST_RESULTS}', allowEmptyResults: true
+                    archiveArtifacts artifacts: '${TEST_RESULTS}', allowEmptyArchive: true
+                }
+            }
             
             sh '''
                 echo "=== Build Failed ==="
                 echo "Last container logs:"
                 docker logs ${APP_CONTAINER} 2>/dev/null || echo "No logs available"
+                
+                echo "\nWorkspace contents:"
+                ls -la ${WORKSPACE}
+                
+                echo "\nTest files:"
+                find ${WORKSPACE} -name "*.py" -type f 2>/dev/null || echo "No Python files found"
             '''
         }
     }
