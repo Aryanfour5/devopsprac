@@ -95,26 +95,19 @@ pipeline {
         stage('Run Pytest') {
     steps {
         sh '''
-            echo "Running pytest with the running app..."
+            echo "Installing test requirements..."
+            pip3 install -q pytest requests pytest-cov
             
-            # Ensure __init__.py exists
-            touch tests/__init__.py
-            
-            # Debug: Show what pytest sees
-            echo "Debug - Files in workspace:"
-            ls -la /var/jenkins_home/workspace/testing-pipeline/tests/
-            
-            # Run pytest - use absolute path and set PYTHONPATH
-            docker run --rm \\
-                -v /var/jenkins_home/workspace/testing-pipeline:/app \\
-                -w /app \\
-                -e APP_URL=http://host.docker.internal:3000 \\
-                -e PYTHONPATH=/app \\
-                ${DOCKER_IMAGE} \\
-                bash -c "python3 -m pytest /app/tests/test_calculator.py -v --tb=short --junitxml=/app/test-results.xml || true"
+            echo "Running pytest against running app on localhost:3000..."
+            python3 -m pytest tests/test_calculator.py \\
+                -v \\
+                --tb=short \\
+                --junitxml=test-results.xml \\
+                -e APP_URL=http://localhost:3000
         '''
     }
 }
+
 
 
         
@@ -191,5 +184,6 @@ pipeline {
         }
     }
 }
+
 
 
