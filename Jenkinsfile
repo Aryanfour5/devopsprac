@@ -8,21 +8,18 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                echo "📦 Checking out code..."
                 checkout scm
             }
         }
 
         stage('Build Docker Image') {
             steps {
-                echo "🔨 Building Docker image..."
                 sh 'docker build -t calculator-app:${BUILD_NUMBER} .'
             }
         }
 
         stage('Start Application') {
             steps {
-                echo "🚀 Starting application..."
                 sh '''
                     docker run -d \
                       --name ${APP_CONTAINER} \
@@ -35,18 +32,16 @@ pipeline {
 
         stage('Health Check') {
             steps {
-                echo "✅ Health checking..."
                 sh '''
                     for i in {1..30}; do
-                        echo "Attempt $i/30..."
-                        if docker logs ${APP_CONTAINER} | grep -q "listening on port 3000"; then
-                            echo "✓ App started!"
+                        if docker logs ${APP_CONTAINER} | grep -qi "running on port 3000"; then
+                            echo "✓ App is running!"
                             exit 0
                         fi
+                        echo "Waiting... ($i/30)"
                         sleep 1
                     done
                     echo "✗ App failed to start"
-                    docker logs ${APP_CONTAINER}
                     exit 1
                 '''
             }
@@ -54,10 +49,9 @@ pipeline {
 
         stage('Run Tests') {
             steps {
-                echo "🧪 Running pytest..."
                 sh '''
                     docker run --rm \
-                      -e APP_URL=http://172.17.0.1:3000 \
+                      --network host \
                       -v ${WORKSPACE}:/workspace \
                       -w /workspace \
                       python:3.11-slim \
@@ -69,19 +63,15 @@ pipeline {
 
     post {
         always {
-            echo "🧹 Cleaning up..."
-            sh '''
-                docker stop ${APP_CONTAINER} 2>/dev/null || true
-                docker rm ${APP_CONTAINER} 2>/dev/null || true
-            '''
+            sh 'docker stop ${APP_CONTAINER} 2>/dev/null || true'
+            sh 'docker rm ${APP_CONTAINER} 2>/dev/null || true'
             junit 'test-results.xml'
         }
         success {
-            echo "🎉 All tests passed!"
+            echo "✅ Build successful!"
         }
         failure {
             echo "❌ Build failed!"
-            sh 'docker logs ${APP_CONTAINER} || true'
         }
     }
 }
