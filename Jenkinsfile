@@ -93,34 +93,27 @@ pipeline {
         }
         
         stage('Run Pytest') {
-            steps {
-                sh '''
-                    echo "Running pytest inside Docker container..."
-                    echo "Workspace: ${WORKSPACE}"
-                    
-                    # Debug: Verify test file exists
-                    echo "Checking test files in workspace:"
-                    ls -la ${WORKSPACE}/tests/ || echo "Tests directory not found!"
-                    
-                    # Verify file exists before running
-                    if [ ! -f "${WORKSPACE}/tests/test_calculator.py" ]; then
-                        echo "ERROR: test_calculator.py not found at ${WORKSPACE}/tests/"
-                        echo "Available files in ${WORKSPACE}:"
-                        find ${WORKSPACE} -name "*.py" -type f
-                        exit 1
-                    fi
-                    
-                    # Run pytest with proper volume mount
-                    docker run --rm \
-                        -v ${WORKSPACE}:/workspace \
-                        ${DOCKER_IMAGE} \
-                        python3 -m pytest /workspace/tests/test_calculator.py \
-                        --junitxml=/workspace/${TEST_RESULTS} \
-                        --tb=short \
-                        -v
-                '''
-            }
-        }
+    steps {
+        sh '''
+            echo "Running pytest with the running app..."
+            
+            # Ensure __init__.py exists
+            touch tests/__init__.py
+            
+            # Run pytest from the mounted workspace
+            docker run --rm \\
+                -v ${WORKSPACE}:/workspace \\
+                -w /workspace \\
+                -e APP_URL=http://host.docker.internal:3000 \\
+                ${DOCKER_IMAGE} \\
+                python3 -m pytest tests/test_calculator.py \\
+                -v \\
+                --tb=short \\
+                --junitxml=/workspace/test-results.xml
+        '''
+    }
+}
+
         
         stage('Generate Coverage Report') {
             when {
@@ -195,3 +188,4 @@ pipeline {
         }
     }
 }
+
