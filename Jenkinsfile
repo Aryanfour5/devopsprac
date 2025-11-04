@@ -59,6 +59,7 @@ stage('Run Tests') {
         '''
     }
 }
+    }
     steps {
         sh '''
             pip install -q pytest requests
@@ -82,6 +83,7 @@ stage('Run Tests') {
         }
     }
 }
+
 
 
 
