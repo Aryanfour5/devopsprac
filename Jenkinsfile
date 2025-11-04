@@ -1,192 +1,87 @@
 pipeline {
     agent any
-    
+
     environment {
-        DOCKER_IMAGE = "calculator-app:${BUILD_NUMBER}"
-        DOCKER_IMAGE_LATEST = "calculator-app:latest"
+        DOCKER_IMAGE = 'node:18-alpine'
+        PY_IMAGE = 'python:3.11-slim'
         APP_CONTAINER = "calculator-app-${BUILD_NUMBER}"
-        TEST_RESULTS = "test-results.xml"
     }
-    
+
     stages {
         stage('Checkout') {
             steps {
-                checkout(scm)
-                sh '''
-                    echo "Repository contents:"
-                    ls -la
-                    echo "\nTests directory:"
-                    ls -la tests/
-                '''
+                echo "📦 Checking out code..."
+                checkout scm
             }
         }
-        
-        stage('Install Dependencies') {
-            steps {
-                sh '''
-                    echo "Installing dependencies..."
-                    node --version
-                    npm install
-                '''
-            }
-        }
-        
+
         stage('Build Docker Image') {
             steps {
+                echo "🔨 Building Docker image..."
                 sh '''
-                    echo "Building Docker image: ${DOCKER_IMAGE}"
-                    docker build -t ${DOCKER_IMAGE} -t ${DOCKER_IMAGE_LATEST} .
-                    docker images | grep calculator-app
+                    docker build -t calculator-app:${BUILD_NUMBER} .
                 '''
             }
         }
-        
+
         stage('Start Application') {
             steps {
+                echo "🚀 Starting application..."
                 sh '''
-                    echo "Starting calculator app container..."
                     docker run -d \
-                        --name ${APP_CONTAINER} \
-                        -p 3000:3000 \
-                        ${DOCKER_IMAGE}
-                    
-                    echo "Waiting 5 seconds for startup..."
-                    sleep 5
-                    
-                    echo "Checking if container is running..."
-                    if docker ps | grep ${APP_CONTAINER}; then
-                        echo "✓ Container is running"
-                    else
-                        echo "✗ Container failed to start!"
-                        echo "Container logs:"
-                        docker logs ${APP_CONTAINER} || true
-                        exit 1
-                    fi
+                      --name ${APP_CONTAINER} \
+                      -p 3000:3000 \
+                      calculator-app:${BUILD_NUMBER}
+                    sleep 3
                 '''
             }
         }
-        
+
         stage('Health Check') {
             steps {
+                echo "✅ Health checking..."
                 sh '''
-                    echo "Running health check..."
-                    for i in {1..30}; do
-                        echo "Attempt $i/30: Checking health endpoint..."
-                        if docker exec ${APP_CONTAINER} node -e "
-                            const http = require('http');
-                            http.get('http://localhost:3000/health', (res) => {
-                                process.exit(res.statusCode === 200 ? 0 : 1);
-                            }).on('error', () => process.exit(1));
-                            setTimeout(() => process.exit(1), 5000);
-                        " 2>/dev/null; then
-                            echo "✓ App is healthy!"
+                    for i in {1..10}; do
+                        if curl -f http://localhost:3000/health; then
+                            echo "App is healthy!"
                             exit 0
                         fi
-                        sleep 2
+                        sleep 1
                     done
-                    
-                    echo "✗ App failed health check"
-                    docker logs ${APP_CONTAINER} || true
                     exit 1
                 '''
             }
         }
-        
-                        stage('Run Pytest') {
+
+        stage('Run Pytest') {
             steps {
+                echo "🧪 Running pytest..."
                 sh '''
-                    docker run --rm \\
-                        -v ${WORKSPACE}:/app \\
-                        -w /app \\
-                        calculator-app:${BUILD_NUMBER} \\
-                        python3 -m pytest /app/tests/ \\
-                        -v \\
-                        --tb=short \\
-                        --junitxml=/app/test-results.xml
-                '''
-            }
-        }
-
-
-
-
-
-        
-        stage('Generate Coverage Report') {
-            when {
-                expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
-            }
-            steps {
-                sh '''
-                    echo "Generating coverage report..."
                     docker run --rm \
-                        -v ${WORKSPACE}:/workspace \
-                        ${DOCKER_IMAGE} \
-                        python3 -m pytest /workspace/tests/test_calculator.py \
-                        --cov=. \
-                        --cov-report=html:/workspace/coverage-report \
-                        --tb=short || true
+                      -e APP_URL=http://host.docker.internal:3000 \
+                      -v ${WORKSPACE}:/workspace \
+                      -w /workspace \
+                      ${PY_IMAGE} \
+                      /bin/sh -c "pip install -q pytest requests && python3 -m pytest tests/ -v --tb=short --junitxml=test-results.xml"
                 '''
             }
         }
     }
-    
+
     post {
         always {
+            echo "🧹 Cleaning up..."
             sh '''
-                echo "Cleaning up containers..."
-                docker stop ${APP_CONTAINER} 2>/dev/null || echo "Container already stopped"
-                docker rm ${APP_CONTAINER} 2>/dev/null || echo "Container already removed"
+                docker stop ${APP_CONTAINER} 2>/dev/null || true
+                docker rm ${APP_CONTAINER} 2>/dev/null || true
             '''
         }
-        
         success {
-            script {
-                if (fileExists('${TEST_RESULTS}')) {
-                    junit testResults: '${TEST_RESULTS}', allowEmptyResults: false
-                }
-            }
-            
-            script {
-                if (fileExists('coverage-report/index.html')) {
-                    publishHTML([
-                        allowMissing: false,
-                        alwaysLinkToLastBuild: true,
-                        keepAll: true,
-                        reportDir: 'coverage-report',
-                        reportFiles: 'index.html',
-                        reportName: 'Coverage Report'
-                    ])
-                }
-            }
-            
-            echo "✓ Build and tests successful!"
+            echo "🎉 Build successful!"
+            junit 'test-results.xml'
         }
-        
         failure {
-            script {
-                if (fileExists('${TEST_RESULTS}')) {
-                    junit testResults: '${TEST_RESULTS}', allowEmptyResults: true
-                    archiveArtifacts artifacts: '${TEST_RESULTS}', allowEmptyArchive: true
-                }
-            }
-            
-            sh '''
-                echo "=== Build Failed ==="
-                echo "Last container logs:"
-                docker logs ${APP_CONTAINER} 2>/dev/null || echo "No logs available"
-                
-                echo "\nWorkspace contents:"
-                ls -la ${WORKSPACE}
-                
-                echo "\nTest files:"
-                find ${WORKSPACE} -name "*.py" -type f 2>/dev/null || echo "No Python files found"
-            '''
+            echo "❌ Build failed!"
         }
     }
 }
-
-
-
-
-
