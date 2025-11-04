@@ -48,16 +48,29 @@ pipeline {
         }
 
         stage('Run Tests') {
-            steps {
-                sh '''
-                    docker run --rm --network host \
-                        -v "$(pwd)":/workspace \
-                        -w /workspace \
-                        python:3.11-slim /bin/sh -c \
-                        "pip install -q pytest requests && python3 -m pytest tests/ -v --tb=short --junitxml=test-results.xml"
-                '''
-            }
-        }
+    steps {
+        sh '''
+            # Create container
+            CONTAINER_ID=$(docker create --network host python:3.11-slim sleep 3600)
+            
+            # Copy files
+            docker cp . $CONTAINER_ID:/workspace/
+            
+            # Start container
+            docker start $CONTAINER_ID
+            
+            # Run tests
+            docker exec $CONTAINER_ID sh -c \
+                "cd /workspace && pip install -q pytest requests && python3 -m pytest tests/ -v --tb=short --junitxml=test-results.xml"
+            
+            # Copy results back
+            docker cp $CONTAINER_ID:/workspace/test-results.xml ./test-results.xml
+            
+            # Cleanup
+            docker rm -f $CONTAINER_ID
+        '''
+    }
+}
     }
 
     post {
@@ -74,3 +87,4 @@ pipeline {
         }
     }
 }
+
