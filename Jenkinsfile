@@ -50,21 +50,11 @@ pipeline {
        stage('Run Tests') {
     steps {
         sh '''
-            # Debug: Check if tests directory exists and list contents
-            echo "=== Current directory contents ==="
-            ls -la
-            echo "=== Tests directory contents ==="
-            ls -la tests/ || echo "tests/ directory not found!"
-            
-            # Run tests with verbose output
             docker run --rm --network host \
-                -v $(pwd):/workspace \
+                -v "$(pwd)":/workspace \
                 -w /workspace \
                 python:3.11-slim /bin/sh -c \
-                "pip install -q pytest requests && \
-                 ls -la /workspace && \
-                 ls -la /workspace/tests/ && \
-                 python3 -m pytest tests/ -v --tb=short --junitxml=test-results.xml"
+                "pip install -q pytest requests && python3 -m pytest tests/ -v --tb=short --junitxml=test-results.xml"
         '''
     }
 }
@@ -84,5 +74,6 @@ pipeline {
         }
     }
 }
+
 
 
