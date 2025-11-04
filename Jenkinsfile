@@ -92,21 +92,21 @@ pipeline {
             }
         }
         
-                stage('Run Pytest') {
+                        stage('Run Pytest') {
             steps {
                 sh '''
-                    echo "Running pytest from Docker..."
                     docker run --rm \\
                         -v ${WORKSPACE}:/app \\
                         -w /app \\
                         calculator-app:${BUILD_NUMBER} \\
-                        python3 -m pytest tests/test_calculator.py \\
+                        python3 -m pytest /app/tests/ \\
                         -v \\
                         --tb=short \\
                         --junitxml=/app/test-results.xml
                 '''
             }
         }
+
 
 
 
@@ -185,6 +185,7 @@ pipeline {
         }
     }
 }
+
 
 
 
